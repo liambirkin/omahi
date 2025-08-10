@@ -1,7 +1,15 @@
 #!/bin/bash
 
 if ! command -v ufw &>/dev/null; then
-  yay -S --noconfirm --needed ufw ufw-docker
+  sudo dnf -y install ufw
+
+  # Install ufw-docker from upstream if missing
+  if ! command -v ufw-docker &>/dev/null; then
+    tmpdir=$(mktemp -d)
+    trap 'rm -rf "$tmpdir"' EXIT
+    git clone --depth=1 https://github.com/chaifeng/ufw-docker.git "$tmpdir/ufw-docker"
+    sudo install -m 755 "$tmpdir/ufw-docker/ufw-docker" /usr/local/bin/ufw-docker
+  fi
 
   # Allow nothing in, everything out
   sudo ufw default deny incoming

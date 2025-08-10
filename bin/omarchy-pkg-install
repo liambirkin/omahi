@@ -1,9 +1,11 @@
 #!/bin/bash
 
-pkg_name=$(yay -Slq | fzf --multi --preview 'yay -Sii {1}' --preview-window=down:75%)
+# List available packages, pick with fzf, preview with dnf info
+pkg_name=$(dnf repoquery --available --qf '%{name}' | \
+  fzf --multi --preview 'dnf info {1}' --preview-window=down:75%)
 
 if [[ -n "$pkg_name" ]]; then
-  yay -Sy --noconfirm "$pkg_name"
+  sudo dnf -y install $pkg_name
   sudo updatedb
   ~/.local/share/omarchy/bin/omarchy-show-done
 fi

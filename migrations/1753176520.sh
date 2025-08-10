@@ -1,11 +1,9 @@
 echo "Install wf-recorder for screen recording for nvidia"
-
 if lspci | grep -qi 'nvidia'; then
   if ! command -v wf-recorder &>/dev/null; then
-    yay -S --noconfirm --needed wf-recorder
+    sudo dnf -y install wf-recorder
   fi
-
   if command -v wl-screenrec &>/dev/null; then
-    yay -R --noconfirm wl-screenrec
+    sudo dnf -y remove wl-screenrec || true
   fi
 fi
