@@ -13,7 +13,11 @@ need_qtutils=! command -v hyprland-qtutils >/dev/null 2>&1
 
 if $need_walker || $need_qtutils; then
   # Build deps (Fedora)
-  sudo dnf -y groupinstall "Development Tools"
+  if [[ "$PKG" =~ dnf5$ ]]; then
+    sudo "$PKG" group install -y "Development Tools"
+  else
+    sudo "$PKG" groupinstall -y "Development Tools"
+  fi
   sudo dnf -y install \
     git cmake ninja-build gcc-c++ pkgconfig \
     go \

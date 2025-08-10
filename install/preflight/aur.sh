@@ -17,7 +17,11 @@ fi
 # sudo dnf copr enable -y agriffis/neovim-nightly
 
 # Install Development Tools group (like base-devel in Arch)
-sudo dnf groupinstall -y "Development Tools"
+if [[ "$PKG" =~ dnf5$ ]]; then
+  sudo "$PKG" group install -y "Development Tools"
+else
+  sudo "$PKG" groupinstall -y "Development Tools"
+fi
 sudo dnf install -y git curl wget make cmake gcc gcc-c++ kernel-devel
 
 # For NVIDIA (if needed later)
