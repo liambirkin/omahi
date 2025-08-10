@@ -6,7 +6,11 @@ if ! command -v walker &>/dev/null; then
   ~/.local/share/omarchy/bin/build-walker || {
     # fallback inline build
     tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
-    sudo dnf -y groupinstall "Development Tools"
+    if [[ "$PKG" =~ dnf5$ ]]; then
+      sudo "$PKG" group install -y "Development Tools"
+    else
+      sudo "$PKG" groupinstall -y "Development Tools"
+    fi
     sudo dnf -y install git go gtk4-devel gtk4-layer-shell-devel gobject-introspection-devel graphene-devel vips-devel
     git clone --depth=1 https://github.com/abenz1267/walker "$tmp/walker"
     ( cd "$tmp/walker/cmd" && go build -o walker && sudo install -Dm755 walker /usr/local/bin/walker )

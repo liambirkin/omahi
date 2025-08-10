@@ -23,7 +23,7 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 # Use custom repo if specified, otherwise default to basecamp/omarchy
-OMARCHY_REPO="${OMARCHY_REPO:-liambirkin/omahi}"
+OMARCHY_REPO="${OMARCHY_REPO:-liambirkin/omarchy}"
 
 echo -e "\nCloning Omarchy from: https://github.com/${OMARCHY_REPO}.git"
 rm -rf ~/.local/share/omarchy/
