@@ -1,21 +1,22 @@
 #!/bin/bash
-
-# Exit immediately if a command exits with a non-zero status
-set -e
+set -euo pipefail
 
 # Get the latest while trying to preserve any modifications
-omarchy_path=~/.local/share/omarchy
-git -C $omarchy_path pull --autostash
-git -C $omarchy_path diff --check || git -C $omarchy_path reset --merge
+omarchy_path="$HOME/.local/share/omarchy"
+git -C "$omarchy_path" pull --autostash
+git -C "$omarchy_path" diff --check || git -C "$omarchy_path" reset --merge
 
 # Run migrations
-~/.local/share/omarchy/bin/omarchy-migrate
+"$HOME/.local/share/omarchy/bin/omarchy-migrate"
 
 # Update system packages
 echo -e "\e[32m\nUpdate system packages\e[0m"
-yay -Syu --noconfirm
+sudo dnf -y upgrade --refresh
 
-# Offer to reboot if the kernel has been changed
-if [ "$(uname -r | sed 's/-arch/\.arch/')" != "$(pacman -Q linux | awk '{print $2}')" ]; then
+# Offer to reboot if a newer kernel is installed than the one running
+current_kernel="$(uname -r)"
+latest_installed_kernel="$(rpm -q kernel --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' | sort -V | tail -1 || true)"
+
+if [[ -n "$latest_installed_kernel" && "$current_kernel" != "$latest_installed_kernel" ]]; then
   gum confirm "Linux kernel has been updated. Reboot?" && sudo reboot now
 fi

@@ -1,9 +1,14 @@
 #!/bin/bash
 
-echo "Installing all dependencies..."
-yay -S --noconfirm --needed \
-  dropbox dropbox-cli libappindicator-gtk3 python-gpgme nautilus-dropbox
+echo "Installing Dropbox (Flatpak)…"
+# Ensure flatpak + flathub
+sudo dnf -y install flatpak
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+# Install Dropbox client
+flatpak install -y flathub com.dropbox.Client
 
 echo "Starting Dropbox..."
-uwsm app -- dropbox-cli start &>/dev/null &
-echo "See Dropbox icon behind   hover tray in top right and right-click for setup."
+# Replace 'dropbox-cli start' with flatpak run
+uwsm app -- flatpak run com.dropbox.Client &>/dev/null &
+echo "See Dropbox icon in the tray and right-click for setup."

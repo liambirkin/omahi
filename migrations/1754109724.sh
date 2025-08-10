@@ -1,6 +1,6 @@
 echo "Add hyprsunset blue light filter"
 if ! command -v hyprsunset &>/dev/null; then
-  yay -S --noconfirm --needed hyprsunset
+  sudo dnf -y install hyprsunset
 fi
 
 ~/.local/share/omarchy/bin/omarchy-refresh-hyprsunset

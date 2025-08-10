@@ -2,128 +2,90 @@
 
 # Hyprland launched via UWSM and login directly as user, rely on disk encryption + hyprlock for security
 if ! command -v uwsm &>/dev/null || ! command -v plymouth &>/dev/null; then
-  yay -S --noconfirm --needed uwsm plymouth
+  sudo dnf -y install uwsm plymouth
 fi
 
 # ==============================================================================
-# PLYMOUTH SETUP
+# PLYMOUTH SETUP (Fedora/Dracut)
 # ==============================================================================
 
-if ! grep -Eq '^HOOKS=.*plymouth' /etc/mkinitcpio.conf; then
-  # Backup original mkinitcpio.conf just in case
-  backup_timestamp=$(date +"%Y%m%d%H%M%S")
-  sudo cp /etc/mkinitcpio.conf "/etc/mkinitcpio.conf.bak.${backup_timestamp}"
-
-  # Add plymouth to HOOKS array after 'base udev' or 'base systemd'
-  if grep "^HOOKS=" /etc/mkinitcpio.conf | grep -q "base systemd"; then
-    sudo sed -i '/^HOOKS=/s/base systemd/base systemd plymouth/' /etc/mkinitcpio.conf
-  elif grep "^HOOKS=" /etc/mkinitcpio.conf | grep -q "base udev"; then
-    sudo sed -i '/^HOOKS=/s/base udev/base udev plymouth/' /etc/mkinitcpio.conf
-  else
-    echo "Couldn't add the Plymouth hook"
-  fi
-
-  # Regenerate initramfs
-  sudo mkinitcpio -P
+# On Fedora, initramfs is built by dracut (not mkinitcpio). Ensure plymouth is included.
+sudo mkdir -p /etc/dracut.conf.d
+if ! grep -q plymouth /etc/dracut.conf.d/omarchy-plymouth.conf 2>/dev/null; then
+  echo 'add_dracutmodules+=" plymouth "' | sudo tee /etc/dracut.conf.d/omarchy-plymouth.conf >/dev/null
+  # Rebuild initramfs so Plymouth module is present
+  sudo dracut -f
 fi
 
 # Add kernel parameters for Plymouth
-if [ -d "/boot/loader/entries" ]; then # systemd-boot
+if [ -d "/boot/loader/entries" ]; then # systemd-boot (rare on Fedora, but keep behavior)
   echo "Detected systemd-boot"
 
   for entry in /boot/loader/entries/*.conf; do
     if [ -f "$entry" ]; then
-      # Skip fallback entries
       if [[ "$(basename "$entry")" == *"fallback"* ]]; then
         echo "Skipped: $(basename "$entry") (fallback entry)"
         continue
       fi
-
-      # Skip if splash it already present for some reason
-      if ! grep -q "splash" "$entry"; then
-        sudo sed -i '/^options/ s/$/ splash quiet/' "$entry"
+      # Use rhgb (Fedora) + quiet
+      if ! grep -q "rhgb" "$entry"; then
+        sudo sed -i '/^options/ s/$/ rhgb quiet/' "$entry"
       else
-        echo "Skipped: $(basename "$entry") (splash already present)"
+        echo "Skipped: $(basename "$entry") (rhgb already present)"
       fi
     fi
   done
-elif [ -f "/etc/default/grub" ]; then # Grub
+elif [ -f "/etc/default/grub" ]; then # GRUB (typical Fedora)
   echo "Detected grub"
 
   # Backup GRUB config before modifying
   backup_timestamp=$(date +"%Y%m%d%H%M%S")
   sudo cp /etc/default/grub "/etc/default/grub.bak.${backup_timestamp}"
 
-  # Check if splash is already in GRUB_CMDLINE_LINUX_DEFAULT
-  if ! grep -q "GRUB_CMDLINE_LINUX_DEFAULT.*splash" /etc/default/grub; then
-    # Get current GRUB_CMDLINE_LINUX_DEFAULT value
-    current_cmdline=$(grep "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub | cut -d'"' -f2)
+  # Current line
+  current_cmdline=$(grep "^GRUB_CMDLINE_LINUX=" /etc/default/grub | cut -d'"' -f2)
+  [ -z "$current_cmdline" ] && current_cmdline=$(grep "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub | cut -d'"' -f2)
 
-    # Add splash and quiet if not present
-    new_cmdline="$current_cmdline"
-    if [[ ! "$current_cmdline" =~ splash ]]; then
-      new_cmdline="$new_cmdline splash"
-    fi
-    if [[ ! "$current_cmdline" =~ quiet ]]; then
-      new_cmdline="$new_cmdline quiet"
-    fi
+  new_cmdline="$current_cmdline"
+  [[ ! "$current_cmdline" =~ rhgb ]] && new_cmdline="$new_cmdline rhgb"
+  [[ ! "$current_cmdline" =~ quiet ]] && new_cmdline="$new_cmdline quiet"
+  new_cmdline=$(echo "$new_cmdline" | xargs)
 
-    # Trim any leading/trailing spaces
-    new_cmdline=$(echo "$new_cmdline" | xargs)
-
-    sudo sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=\".*\"/GRUB_CMDLINE_LINUX_DEFAULT=\"$new_cmdline\"/" /etc/default/grub
-
-    # Regenerate grub config
-    sudo grub-mkconfig -o /boot/grub/grub.cfg
+  if grep -q "^GRUB_CMDLINE_LINUX=" /etc/default/grub; then
+    sudo sed -i "s/^GRUB_CMDLINE_LINUX=\".*\"/GRUB_CMDLINE_LINUX=\"$new_cmdline\"/" /etc/default/grub
   else
-    echo "GRUB already configured with splash kernel parameters"
+    sudo sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=\".*\"/GRUB_CMDLINE_LINUX_DEFAULT=\"$new_cmdline\"/" /etc/default/grub
   fi
-elif [ -d "/etc/cmdline.d" ]; then # UKI
+
+  # Regenerate GRUB config (works for both BIOS/UEFI via the /etc/grub2.cfg symlink)
+  sudo grub2-mkconfig -o "$(readlink -f /etc/grub2.cfg)"
+elif [ -d "/etc/cmdline.d" ]; then # UKI with cmdline.d
   echo "Detected a UKI setup"
-  # Relying on mkinitcpio to assemble a UKI
-  # https://wiki.archlinux.org/title/Unified_kernel_image
-  if ! grep -q splash /etc/cmdline.d/*.conf; then
-    # Need splash, create the omarchy file
-    echo "splash" | sudo tee -a /etc/cmdline.d/omarchy.conf
-  fi
-  if ! grep -q quiet /etc/cmdline.d/*.conf; then
-    # Need quiet, create or append the omarchy file
-    echo "quiet" | sudo tee -a /etc/cmdline.d/omarchy.conf
-  fi
-elif [ -f "/etc/kernel/cmdline" ]; then # UKI Alternate
-  # Alternate UKI kernel cmdline location
+  grep -q rhgb /etc/cmdline.d/*.conf 2>/dev/null || echo "rhgb" | sudo tee -a /etc/cmdline.d/omarchy.conf
+  grep -q quiet /etc/cmdline.d/*.conf 2>/dev/null || echo "quiet" | sudo tee -a /etc/cmdline.d/omarchy.conf
+elif [ -f "/etc/kernel/cmdline" ]; then # UKI Alternate (kernel-install)
   echo "Detected a UKI setup"
 
-  # Backup kernel cmdline config before modifying
   backup_timestamp=$(date +"%Y%m%d%H%M%S")
   sudo cp /etc/kernel/cmdline "/etc/kernel/cmdline.bak.${backup_timestamp}"
 
   current_cmdline=$(cat /etc/kernel/cmdline)
-
-  # Add splash and quiet if not present
   new_cmdline="$current_cmdline"
-  if [[ ! "$current_cmdline" =~ splash ]]; then
-    new_cmdline="$new_cmdline splash"
-  fi
-  if [[ ! "$current_cmdline" =~ quiet ]]; then
-    new_cmdline="$new_cmdline quiet"
-  fi
-
-  # Trim any leading/trailing spaces
+  [[ ! "$current_cmdline" =~ rhgb ]] && new_cmdline="$new_cmdline rhgb"
+  [[ ! "$current_cmdline" =~ quiet ]] && new_cmdline="$new_cmdline quiet"
   new_cmdline=$(echo "$new_cmdline" | xargs)
-
-  # Write new file
-  echo $new_cmdline | sudo tee /etc/kernel/cmdline
+  echo "$new_cmdline" | sudo tee /etc/kernel/cmdline >/dev/null
 else
   echo ""
   echo " None of systemd-boot, GRUB, or UKI detected. Please manually add these kernel parameters:"
-  echo "  - splash (to see the graphical splash screen)"
+  echo "  - rhgb (to see the graphical splash screen)"
   echo "  - quiet (for silent boot)"
   echo ""
 fi
 
 if [ "$(plymouth-set-default-theme)" != "omarchy" ]; then
   sudo cp -r "$HOME/.local/share/omarchy/default/plymouth" /usr/share/plymouth/themes/omarchy/
+  # -R: set theme and rebuild initramfs (calls dracut on Fedora)
   sudo plymouth-set-default-theme -R omarchy
 fi
 
@@ -152,54 +114,47 @@ int main(int argc, char *argv[]) {
     int vt_fd;
     int vt_num = 1; // TTY1
     char vt_path[32];
-    
+
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <session_command>\n", argv[0]);
         return 1;
     }
-    
-    // Open the VT (simple approach like SDDM)
+
     snprintf(vt_path, sizeof(vt_path), "/dev/tty%d", vt_num);
     vt_fd = open(vt_path, O_RDWR);
     if (vt_fd < 0) {
         perror("Failed to open VT");
         return 1;
     }
-    
-    // Activate the VT
+
     if (ioctl(vt_fd, VT_ACTIVATE, vt_num) < 0) {
         perror("VT_ACTIVATE failed");
         close(vt_fd);
         return 1;
     }
-    
-    // Wait for VT to be active
+
     if (ioctl(vt_fd, VT_WAITACTIVE, vt_num) < 0) {
         perror("VT_WAITACTIVE failed");
         close(vt_fd);
         return 1;
     }
-    
-    // Critical: Set graphics mode to prevent console text
+
     if (ioctl(vt_fd, KDSETMODE, KD_GRAPHICS) < 0) {
         perror("KDSETMODE KD_GRAPHICS failed");
         close(vt_fd);
         return 1;
     }
-    
-    // Clear VT and close (like SDDM does)
+
     const char *clear_seq = "\33[H\33[2J";
     if (write(vt_fd, clear_seq, strlen(clear_seq)) < 0) {
         perror("Failed to clear VT");
     }
-    
+
     close(vt_fd);
-    
-    // Set working directory to user's home
+
     const char *home = getenv("HOME");
     if (home) chdir(home);
-    
-    // Now execute the session command
+
     execvp(argv[1], &argv[1]);
     perror("Failed to exec session");
     return 1;

@@ -1,5 +1,4 @@
 echo "Install bash-completion"
-
-if ! pacman -Q bash-completion &>/dev/null; then
-  yay -S --noconfirm --needed bash-completion
+if ! rpm -q bash-completion &>/dev/null; then
+  sudo dnf -y install bash-completion
 fi
